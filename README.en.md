@@ -13,6 +13,10 @@
   <a href="README.md">Русский</a> · <b>English</b>
 </p>
 
+<p align="center">
+  <a href="https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe"><b>⬇ Download Liser for Windows</b></a>
+</p>
+
 ![Liser in dark mode](docs/screenshot-en-dark.png)
 
 ## Features
@@ -35,7 +39,7 @@
 
 ## Install
 
-Download `Liser-Setup-<version>.exe` from [Releases](../../releases) and run it. The installer lets you pick a folder and creates desktop and Start menu shortcuts. Uninstall from Settings → Apps.
+[Download the installer](https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe) (always the latest version) and run it. Older versions are in [Releases](../../releases). The installer lets you pick a folder and creates desktop and Start menu shortcuts. Uninstall from Settings → Apps.
 
 **Updating**: just run the newer installer. It detects the installed version, shows old → new, and offers an “Update” button. The app is updated in place; notes and settings are untouched.
 

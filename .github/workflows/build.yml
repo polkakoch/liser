@@ -36,6 +36,13 @@ jobs:
           path: dist/*.exe
           if-no-files-found: error
 
+      # Same installer under a fixed name, so that
+      # releases/latest/download/Liser-Setup.exe always points to the newest one.
+      - name: Copy installer to fixed name
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Copy-Item (Get-ChildItem dist/Liser-Setup-*.exe | Select-Object -First 1).FullName dist/Liser-Setup.exe
+
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
