@@ -1,0 +1,95 @@
+{
+  "name": "liser",
+  "productName": "Liser",
+  "version": "1.2.0",
+  "description": "Liser вЂ” offline notes with blocks, to-dos, reminders and drawing",
+  "author": {
+    "name": "Liser contributors"
+  },
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.js",
+  "keywords": [
+    "notes",
+    "offline",
+    "electron",
+    "todo",
+    "reminders",
+    "block-editor"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron .",
+    "web": "node scripts/serve.js",
+    "check": "node scripts/check.js",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-icon.ps1",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "dist:portable": "electron-builder --win portable --x64 --publish never"
+  },
+  "build": {
+    "appId": "com.liser.notes",
+    "productName": "Liser",
+    "copyright": "В© 2026 Liser contributors",
+    "asar": true,
+    "compression": "maximum",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "electronLanguages": [
+      "ru",
+      "en-US",
+      "he"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Liser-Setup-${version}.${ext}",
+      "requestedExecutionLevel": "asInvoker",
+      "legalTrademarks": "Liser"
+    },
+    "portable": {
+      "artifactName": "Liser-Portable-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Liser",
+      "uninstallDisplayName": "Liser",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "multiLanguageInstaller": true,
+      "installerLanguages": [
+        "ru_RU",
+        "en_US",
+        "he_IL"
+      ],
+      "license": "LICENSE"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0"
+  }
+}
