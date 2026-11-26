@@ -1,8 +1,8 @@
 {
   "name": "liser",
   "productName": "Liser",
-  "version": "1.2.0",
-  "description": "Liser вЂ” offline notes with blocks, to-dos, reminders and drawing",
+  "version": "1.3.0",
+  "description": "Liser — offline notes with blocks, to-dos, tables, reminders and drawing",
   "author": {
     "name": "Liser contributors"
   },
@@ -26,12 +26,13 @@
     "check": "node scripts/check.js",
     "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-icon.ps1",
     "dist": "electron-builder --win nsis --x64 --publish never",
-    "dist:portable": "electron-builder --win portable --x64 --publish never"
+    "dist:portable": "electron-builder --win portable --x64 --publish never",
+    "dist:beta": "node scripts/dist-beta.js"
   },
   "build": {
     "appId": "com.liser.notes",
     "productName": "Liser",
-    "copyright": "В© 2026 Liser contributors",
+    "copyright": "© 2026 Liser contributors",
     "asar": true,
     "compression": "maximum",
     "files": [

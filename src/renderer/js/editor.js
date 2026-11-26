@@ -6,6 +6,8 @@ import * as store from './store.js';
 import { menu, popover, datePicker, emojiPicker, popoverOpen, toast } from './ui.js';
 import { createDrawing } from './draw.js';
 import { linkHtml, pagePicker, pageChoices, choiceList, hoverCard, hideCard } from './links.js';
+import { createTable, newTable, normRows, tableText, tableMarkdown, parseGrid, parseMdTable } from './table.js';
+import { LANGS, normLang, detectLang, looksLikeCode, highlightCode, clearCode, clearAllCode, codeText } from './codehl.js';
 
 const api = store.api;
 const TEXT = new Set(['p', 'h1', 'h2', 'h3', 'todo', 'bullet', 'num', 'toggle', 'quote', 'callout', 'code']);
@@ -26,12 +28,20 @@ export const BLOCKS = [
   { type: 'quote', icon: 'quote', kw: 'quote цитата ציטוט' },
   { type: 'callout', icon: 'bulb', kw: 'callout note highlight выноска заметка важно הערה בולטת' },
   { type: 'code', icon: 'code', kw: 'code snippet код קוד' },
+  { type: 'table', icon: 'table', kw: 'table grid cells таблица сетка ячейки טבלה' },
+  { type: 'vocab', icon: 'vocab', kw: 'vocabulary words dictionary translation language словарь слова перевод язык иностранный מילון מילים תרגום שפה' },
   { type: 'divider', icon: 'divider', kw: 'divider line hr separator разделитель линия קו מפריד' },
+  { type: 'toc', icon: 'toc', kw: 'toc contents outline headings оглавление содержание заголовки תוכן עניינים' },
   { type: 'image', icon: 'image', kw: 'image picture photo картинка изображение фото תמונה' },
   { type: 'draw', icon: 'pen', kw: 'draw drawing canvas sketch рисунок холст рисовать ציור קנבס' },
   { type: 'remind', icon: 'bell', kw: 'remind reminder date due alarm напоминание дата срок будильник תזכורת תאריך' },
   { type: 'page', icon: 'page', kw: 'page subpage страница вложенная דף' },
 ];
+
+const TURN_KEYS = {
+  Digit0: 'p', Digit1: 'h1', Digit2: 'h2', Digit3: 'h3', Digit4: 'todo', Digit5: 'bullet',
+  Digit6: 'num', Digit7: 'toggle', Digit8: 'code', Digit9: 'quote',
+};
 
 const PLACEHOLDER = {
   p: 'ph.p', h1: 'ph.h1', h2: 'ph.h2', h3: 'ph.h3', todo: 'ph.todo', bullet: 'ph.list', num: 'ph.list',
@@ -47,7 +57,12 @@ const BG_COLORS = [
   ['rgba(0,135,107,.22)', 'green'], ['rgba(0,120,223,.22)', 'blue'], ['rgba(103,36,222,.2)', 'purple'], ['rgba(221,0,129,.2)', 'pink'], ['rgba(255,0,26,.2)', 'red'],
 ];
 
-const RTL_CHAR = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
+// Невидимый разделитель, за которым каретка выходит из ссылки или форматирования (в сохранённый текст не попадает)
+const ZW = '​';
+const ZW_RE = /​/g;
+const INLINE_SEL = 'a, b, strong, i, em, s, strike, code, u';
+
+const RTL_CHAR =/[֐-ࣿיִ-﷿ﹰ-﻿]/;
 const LTR_CHAR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ]/;
 function strongDir(text) {
   for (const ch of text) {
@@ -185,11 +200,16 @@ export function toMarkdown(blocks, opts = {}) {
       case 'toggle': out.push(`${pad}- ▸ ${text}${remind}`); break;
       case 'quote': out.push(pad + '> ' + text.replace(/\n/g, '\n> '), ''); break;
       case 'callout': out.push(pad + `> ${b.icon || '💡'} ` + text.replace(/\n/g, '\n> '), ''); break;
-      case 'code': out.push('```', text, '```', ''); break;
+      case 'code': out.push('```' + (b.lang || ''), text, '```', ''); break;
       case 'divider': out.push('---', ''); break;
       case 'image': out.push(`${pad}![${b.caption || ''}](${assets}${b.src})`, ''); break;
       case 'draw': out.push(pad + '*' + t('md.drawing') + '*', ''); break;
       case 'page': out.push(`${pad}[[${store.titleOf(b.page)}]]`, ''); break;
+      case 'table': out.push(tableMarkdown(b), ''); break;
+      case 'toc':
+        for (const x of blocks) if (/^h[123]$/.test(x.type)) out.push('  '.repeat(+x.type[1] - 1) + '- ' + plainText(x.html).trim());
+        out.push('');
+        break;
       default: out.push(pad + text + remind, '');
     }
   }
@@ -208,6 +228,52 @@ function withLinks(text) {
   return html + escapeHtml(text.slice(last));
 }
 
+/* ── Блоки из буфера обмена в формате Liser: другой Chromium-сайт мог подложить туда что угодно ── */
+
+const BLOCK_TYPES = new Set([...TEXT, 'divider', 'image', 'draw', 'page', 'table', 'toc']);
+const INLINE_OK = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'CODE', 'A', 'BR', 'SPAN', 'FONT', 'MARK', 'SUB', 'SUP']);
+const DROP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'NOSCRIPT']);
+
+// Оставляем только простое форматирование: без чужих атрибутов, обработчиков и внешних ссылок кроме http/mailto
+function cleanHtml(html) {
+  // DOMParser создаёт отдельный неактивный документ: в нём не грузятся картинки и не срабатывают обработчики
+  const root = new DOMParser().parseFromString(`<body>${String(html)}</body>`, 'text/html').body;
+  for (const el of [...root.querySelectorAll('*')]) {
+    if (DROP.has(el.tagName)) { el.remove(); continue; }
+    if (!INLINE_OK.has(el.tagName)) { el.replaceWith(...el.childNodes); continue; }
+    const color = el.style?.color, bg = el.style?.backgroundColor;
+    const href = el.getAttribute('href'), pageRef = el.getAttribute('data-page'), fontColor = el.getAttribute('color');
+    for (const a of [...el.attributes]) el.removeAttribute(a.name);
+    if (el.tagName === 'A') {
+      if (pageRef) el.setAttribute('data-page', pageRef);
+      else if (href && /^(https?:|mailto:)/i.test(href)) el.setAttribute('href', href);
+    }
+    if (el.tagName === 'FONT' && fontColor) el.setAttribute('color', fontColor);
+    if (color) el.style.color = color;
+    if (bg) el.style.backgroundColor = bg;
+  }
+  return root.innerHTML;
+}
+
+function cleanBlock(raw) {
+  if (!raw || typeof raw !== 'object' || !BLOCK_TYPES.has(raw.type)) return null;
+  const b = { ...raw, id: uid() };
+  if (b.html != null) b.html = cleanHtml(b.html);
+  for (const k of ['src', 'bg']) if (b[k] != null) b[k] = String(b[k]).split(/[\\/]/).pop();
+  for (const k of ['caption', 'icon', 'page']) if (b[k] != null) b[k] = String(b[k]);
+  if (b.type === 'table') {
+    b.rows = normRows(b.rows);
+    if (b.widths != null) b.widths = Array.isArray(b.widths) ? b.widths.map((w) => clamp(+w || 120, 60, 2000)) : undefined;
+  }
+  if (b.lang != null) b.lang = normLang(b.lang) || undefined;
+  if (b.type === 'draw') b.strokes = Array.isArray(b.strokes) ? b.strokes.filter((s) => s && Array.isArray(s.p)) : [];
+  const indent = clamp(b.indent | 0, 0, MAX_INDENT);
+  if (indent) b.indent = indent; else delete b.indent;
+  if (b.color != null && !/^(bg-)?[a-z]+$/.test(String(b.color))) delete b.color;
+  if (b.remind && !Number.isFinite(+b.remind.at)) delete b.remind;
+  return b;
+}
+
 function fromText(text) {
   const out = [];
   const lines = text.replace(/\r/g, '').split('\n');
@@ -218,10 +284,23 @@ function fromText(text) {
     const line = raw.trim();
     const mk = (type, body, extra) => out.push({ id: uid(), type, html: withLinks(body), ...(indent && { indent }), ...extra });
     let m;
+    if (/^\|.*\|$/.test(line)) {
+      // Таблица Markdown: подряд идущие строки вида | a | b |
+      const buf = [];
+      let j = i;
+      for (; j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j]); j++) buf.push(lines[j]);
+      if (buf.length >= 2) {
+        const { rows, head } = parseMdTable(buf);
+        out.push({ id: uid(), type: 'table', rows, ...(!head && { head: false }) });
+        i = j - 1;
+        continue;
+      }
+    }
     if (line.startsWith('```')) {
+      const lang = normLang(line.slice(3));
       const buf = [];
       for (i++; i < lines.length && !lines[i].trim().startsWith('```'); i++) buf.push(lines[i]);
-      out.push({ id: uid(), type: 'code', html: escapeHtml(buf.join('\n')) });
+      out.push({ id: uid(), type: 'code', html: escapeHtml(buf.join('\n')), ...(lang && { lang }) });
     } else if ((m = /^(#{1,3})\s+(.*)$/.exec(line))) out.push({ id: uid(), type: 'h' + m[1].length, html: escapeHtml(m[2]) });
     else if ((m = /^(?:[-*]\s+)?\[( |x|X)?\]\s+(.*)$/.exec(line))) mk('todo', m[2], /x/i.test(m[1] || '') ? { checked: true } : null);
     else if ((m = /^[-*•]\s+▸\s+(.*)$/.exec(line))) mk('toggle', m[1]);
@@ -342,6 +421,106 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     });
   }
 
+  /* ── Блоки кода: подсветка и язык ── */
+
+  const hlQueue = new Set();
+  let hlFrame = 0;
+
+  function langLabel(b, detected) {
+    if (b.lang && LANGS[b.lang]) return LANGS[b.lang].name;
+    return detected && LANGS[detected] ? t('code.autoDetected', { lang: LANGS[detected].name }) : t('code.auto');
+  }
+
+  function scheduleHL(id) {
+    hlQueue.add(id);
+    if (!hlFrame) hlFrame = requestAnimationFrame(runHL);
+  }
+
+  function runHL() {
+    hlFrame = 0;
+    for (const id of hlQueue) {
+      const b = byId.get(id);
+      const tx = textOf(id);
+      if (!b || !tx || b.type !== 'code') continue;
+      let lang = b.lang;
+      if (!lang) {
+        // Язык «авто» определяется заново, только когда текст заметно изменился
+        const len = tx.textContent.length;
+        if (!tx._det || Math.abs(tx._det.len - len) >= 12 || (len && !tx._det.len)) tx._det = { len, lang: detectLang(codeText(tx)).lang };
+        lang = tx._det.lang;
+      }
+      highlightCode(tx, lang);
+      const btn = els.get(id)?.querySelector('.code-lang');
+      if (btn) btn.textContent = langLabel(b, lang);
+    }
+    hlQueue.clear();
+  }
+
+  function pickLang(b, anchor) {
+    const input = h('input', { class: 'input', type: 'text', placeholder: t('code.search'), spellcheck: 'false' });
+    const list = h('div', { class: 'lang-list' });
+    const all = [{ key: null, name: t('code.auto') }, ...Object.entries(LANGS).map(([key, L]) => ({ key, name: L.name, alias: L.alias || '' }))];
+    let items = all, cur = 0, pop;
+    const choose = (it) => {
+      pop.close();
+      pre();
+      if (it.key) b.lang = it.key; else delete b.lang;
+      const tx = textOf(b.id);
+      if (tx) delete tx._det;
+      changed();
+      scheduleHL(b.id);
+    };
+    const draw = () => {
+      list.replaceChildren(...items.map((it, i) => {
+        const row = h('button', { class: 'menu-item' + (i === cur ? ' on' : '') },
+          h('span', { class: 'mi-label' }, it.name),
+          (it.key || null) === (b.lang || null) && h('span', { class: 'mi-hint', html: icon('check', 14) }));
+        row.addEventListener('click', () => choose(it));
+        row.addEventListener('mousemove', () => { if (cur !== i) { cur = i; draw(); } });
+        return row;
+      }));
+      list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
+    };
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      items = q ? all.filter((it) => it.name.toLowerCase().includes(q) || (it.key || '').includes(q) || (it.alias || '').split(' ').includes(q)) : all;
+      cur = 0;
+      draw();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (items.length) { cur = (cur + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; draw(); } }
+      else if (e.key === 'Enter') { e.preventDefault(); if (items[cur]) choose(items[cur]); }
+    });
+    draw();
+    pop = popover(anchor, h('div', { class: 'lang-pick' }, input, list), { align: 'end' });
+    input.focus();
+  }
+
+  /* ── Оглавление: заголовки страницы, обновляется само ── */
+
+  let tocFrame = 0, tocSig = '', hasToc = false;
+  function scheduleToc() {
+    if (!tocFrame) tocFrame = requestAnimationFrame(renderToc);
+  }
+  function renderToc() {
+    tocFrame = 0;
+    const navs = blocksEl.querySelectorAll('.toc');
+    if (!navs.length) { tocSig = ''; return; }
+    const heads = blocks.filter((x) => /^h[123]$/.test(x.type)).map((x) => ({ id: x.id, lvl: +x.type[1], text: plainText(x.html).trim() }));
+    const sig = JSON.stringify(heads);
+    if (sig === tocSig && [...navs].every((n) => n.childElementCount)) return;
+    tocSig = sig;
+    const min = Math.min(...heads.map((x) => x.lvl));
+    for (const nav of navs) {
+      nav.replaceChildren(...(heads.length ? heads.map((x) => {
+        const row = h('button', { class: 'toc-item', style: { '--lvl': x.lvl - min } }, x.text || t('ed.untitledHeading'));
+        syncDir(row);
+        row.addEventListener('click', () => flash(x.id));
+        return row;
+      }) : [h('div', { class: 'toc-empty' }, t('ed.tocEmpty'))]));
+    }
+  }
+
   function buildBlock(b) {
     const el = h('div', { class: 'block', 'data-id': b.id, 'data-type': b.type });
     if (b.indent) el.style.setProperty('--indent', b.indent);
@@ -361,8 +540,15 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
         class: 'text', contenteditable: code ? 'plaintext-only' : 'true', spellcheck: 'false', 'data-ph': t(PLACEHOLDER[b.type]),
       });
       tx.innerHTML = b.html || '';
-      if (!code) { syncDir(tx); markLinks(tx); }
-      el.append(tx);
+      if (!code) { syncDir(tx); markLinks(tx); el.append(tx); } else {
+        // Панель блока кода: язык (выбор / «авто») и копирование; подсветка — на следующем кадре
+        el.append(h('div', { class: 'code-box' },
+          h('div', { class: 'code-bar', contenteditable: 'false' },
+            h('button', { class: 'code-lang', title: t('code.pickLang') }, langLabel(b, null)),
+            h('button', { class: 'code-copy', title: t('code.copy'), html: icon('copy', 14) + `<span>${t('code.copy')}</span>` })),
+          tx));
+        scheduleHL(b.id);
+      }
       if (b.remind) el.append(remindChip(b));
       if (b.type === 'toggle') el.append(h('div', { class: 'toggle-empty' }, t('ed.emptyToggle')));
     } else if (b.type === 'divider') {
@@ -377,6 +563,11 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       el.append(h('div', { class: 'img-wrap' }, fig, cap));
     } else if (b.type === 'draw') {
       el.append(createDrawing(b, { onChange: () => changed(), assetUrl: api.assetUrl, signal }));
+    } else if (b.type === 'toc') {
+      el.append(h('nav', { class: 'toc', contenteditable: 'false' }));
+      scheduleToc();
+    } else if (b.type === 'table') {
+      el.append(createTable(b, { before: pre, onChange: (typing) => changed(typing), onExit: (dir) => leaveTable(b, dir), syncDir }));
     } else if (b.type === 'page') {
       const pm = store.meta(b.page);
       const alive = pm && !store.isTrashed(b.page);
@@ -392,8 +583,10 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     const counts = [];
     let hideAt = -1;
     hidden.clear();
+    hasToc = false;
     for (let i = 0; i < blocks.length; i++) {
       const b = blocks[i], d = depth(b), el = els.get(b.id);
+      if (b.type === 'toc') hasToc = true;
       let hid = false;
       if (hideAt >= 0 && d > hideAt) hid = true; else hideAt = -1;
       if (hid) hidden.add(b.id);
@@ -423,6 +616,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
   }
 
   function mountAll() {
+    clearAllCode();
     byId.clear();
     els.clear();
     const frag = document.createDocumentFragment();
@@ -453,7 +647,9 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       const i = indexOf(id);
       if (i < 0) continue;
       blocks.splice(i, 1);
-      els.get(id)?.remove();
+      const old = els.get(id);
+      if (old?.dataset.type === 'code') clearCode(old.querySelector('pre.text'));
+      old?.remove();
       els.delete(id);
       byId.delete(id);
       selected.delete(id);
@@ -466,7 +662,9 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
 
   function refresh(b) {
     const el = buildBlock(b);
-    els.get(b.id).replaceWith(el);
+    const old = els.get(b.id);
+    if (old.dataset.type === 'code') clearCode(old.querySelector('pre.text'));
+    old.replaceWith(el);
     els.set(b.id, el);
     if (selected.has(b.id)) el.classList.add('selected');
     relayout();
@@ -549,13 +747,43 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
   function pre() { if (hist.timer) record(); }
   function changed(typing) {
     store.touch(pageId, page);
+    if (hasToc) scheduleToc();
     if (typing) { clearTimeout(hist.timer); hist.timer = setTimeout(record, 700); } else record();
   }
+  // Блок не изменился, если совпадают все поля (вложенные массивы и объекты при правках заменяются целиком)
+  const sameBlock = (a, b) => {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+  };
+
   function restore(s) {
+    const prev = new Map(blocks.map((b) => [b.id, b]));
     blocks = page.blocks = s.blocks.map((b) => ({ ...b }));
     if (s.cover) page.cover = s.cover; else delete page.cover;
     selected.clear();
-    mountAll();
+    // Перестраиваем только изменившиеся блоки: на длинной странице отмена остаётся мгновенной.
+    // Таблицы и холсты держат ссылку на свой объект блока, поэтому их пересоздаём всегда.
+    const frag = document.createDocumentFragment();
+    const oldEls = new Map(els);
+    byId.clear();
+    els.clear();
+    for (const b of blocks) {
+      byId.set(b.id, b);
+      const old = prev.get(b.id);
+      let el = oldEls.get(b.id);
+      if (!el || !old || b.type === 'table' || b.type === 'draw' || !sameBlock(old, b)) {
+        if (el?.dataset.type === 'code') clearCode(el.querySelector('pre.text'));
+        el = buildBlock(b);
+      } else el.classList.remove('selected');
+      oldEls.delete(b.id);
+      els.set(b.id, el);
+      frag.append(el);
+    }
+    for (const el of oldEls.values()) if (el.dataset.type === 'code') clearCode(el.querySelector('pre.text'));
+    blocksEl.replaceChildren(frag);
+    for (const b of blocks) if (b.type === 'code') scheduleHL(b.id);
+    relayout();
+    scheduleToc();
     renderCover();
     renderHead();
     placeHandle(null);
@@ -588,8 +816,23 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
   }
   const selectedList = () => blocks.filter((b) => selected.has(b.id));
 
+  // Выход из таблицы стрелками / Ctrl+Enter: к соседнему блоку, а вниз — при необходимости в новый абзац
+  function leaveTable(b, dir) {
+    if (dir === 0) { select([b.id]); return; }
+    const i = blocks.indexOf(b);
+    const next = neighbor(i, dir);
+    if (next) { focusBlock(next, dir < 0 ? 'end' : 0); return; }
+    if (dir < 0) { setCaret(titleEl, 'end'); return; }
+    pre();
+    const nb = newP(b.indent ? { indent: b.indent } : null);
+    insertAt(i + 1, [nb]);
+    changed();
+    focusBlock(nb, 0);
+  }
+
   function focusBlock(b, where = 'end') {
     reveal(b.id);
+    if (b.type === 'table') { clearSel(); els.get(b.id)?.querySelector('.tbl')?.focusEdge(where === 'end'); return; }
     const tx = textOf(b.id);
     if (!tx) { select([b.id]); els.get(b.id)?.scrollIntoView({ block: 'nearest' }); return; }
     clearSel();
@@ -599,7 +842,10 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
   /* ── Операции над блоками ── */
 
   function syncText(tx, b) {
-    if (!tx.textContent && !tx.querySelector('img')) { if (tx.firstChild) tx.replaceChildren(); b.html = ''; } else b.html = tx.innerHTML;
+    if (!tx.textContent.replace(ZW_RE, '') && !tx.querySelector('img')) {
+      if (tx.firstChild && !tx.textContent) tx.replaceChildren();
+      b.html = '';
+    } else b.html = tx.innerHTML.replace(ZW_RE, '');
   }
 
   function setType(b, type, keepCaret = true) {
@@ -824,8 +1070,14 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       const id = store.createPage(pageId);
       place([{ id: uid(), type: 'page', page: id }], b);
       ctx.navigate(id);
+    } else if (def.type === 'table' || def.type === 'vocab') {
+      const nb = { id: uid(), ...newTable(def.type) };
+      place([nb], b);
+      // Словарь сразу готов к вводу первого слова, обычная таблица — к названиям столбцов
+      const tbl = els.get(nb.id)?.querySelector('.tbl');
+      if (def.type === 'vocab') tbl?.focusFirstEmpty(); else tbl?.focusEdge(false);
     } else {
-      const nb = def.type === 'draw' ? { id: uid(), type: 'draw', h: 300, strokes: [] } : { id: uid(), type: 'divider' };
+      const nb = def.type === 'draw' ? { id: uid(), type: 'draw', h: 300, strokes: [] } : { id: uid(), type: def.type === 'toc' ? 'toc' : 'divider' };
       place([nb], b);
       const next = neighbor(blocks.indexOf(nb), 1);
       if (next && isText(next)) focusBlock(next, 0);
@@ -847,40 +1099,45 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
 
   // Вставка ссылки вместо диапазона r внутри tx
   function insertLink(tx, r, id, text) {
+    const lead = /^\s*/.exec(text)[0], trail = /\s*$/.exec(text)[0];
+    const core = text.trim() || store.titleOf(id);
+    insertInline(tx, r, escapeHtml(lead) + linkHtml(id, core) + escapeHtml(trail), true);
+  }
+
+  // Вставляет HTML вместо диапазона r так, чтобы дальнейший ввод шёл обычным текстом, а не внутрь
+  // ссылки или жирного. Для этого сразу после вставки ставится невидимый символ; в сохранённый текст он не попадает.
+  // space: в конце строки вместо невидимого символа оставить пробел (удобно после ссылки)
+  function insertInline(tx, r, html, space) {
     tx.focus({ preventScroll: true });
     const s = getSelection();
     s.removeAllRanges();
     s.addRange(r);
-    const lead = /^\s*/.exec(text)[0], trail = /\s*$/.exec(text)[0];
-    const core = text.trim() || store.titleOf(id);
-    document.execCommand('insertHTML', false, escapeHtml(lead) + linkHtml(id, core) + escapeHtml(trail) + '​');
-    // Невидимый символ после ссылки нужен, чтобы дальнейший ввод шёл уже не внутрь ссылки — убираем его сразу
+    document.execCommand('insertHTML', false, html + ZW);
     const b = blockOf(tx);
     const w = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT);
     let n;
     while ((n = w.nextNode())) {
-      const i = n.nodeValue.indexOf('​');
-      if (i < 0 || n.parentElement.closest('a')) continue;
+      const i = n.nodeValue.indexOf(ZW);
+      if (i < 0 || n.parentElement.closest(INLINE_SEL)) continue;
       const after = n.nextSibling;
+      const rr = document.createRange();
       if (n.nodeValue.length === 1 && !after) {
-        // Ссылка в конце строки: пробел после неё, чтобы печатать дальше обычным текстом
-        const sp = document.createTextNode(' ');
-        n.replaceWith(sp);
-        const rr = document.createRange();
-        rr.setStart(sp, 1); rr.collapse(true);
-        s.removeAllRanges(); s.addRange(rr);
+        // В конце строки: пробел (после ссылки) или сам невидимый символ — каретка остаётся за форматированием
+        if (space) {
+          const sp = document.createTextNode(' ');
+          n.replaceWith(sp);
+          rr.setStart(sp, 1);
+        } else rr.setStart(n, 1);
       } else if (n.nodeValue.length === 1) {
         n.remove();
-        const rr = document.createRange();
         if (after.nodeType === 3) rr.setStart(after, 0); else rr.setStartBefore(after);
-        rr.collapse(true);
-        s.removeAllRanges(); s.addRange(rr);
       } else {
         n.deleteData(i, 1);
-        const rr = document.createRange();
-        rr.setStart(n, i); rr.collapse(true);
-        s.removeAllRanges(); s.addRange(rr);
+        rr.setStart(n, i);
       }
+      rr.collapse(true);
+      s.removeAllRanges();
+      s.addRange(rr);
       break;
     }
     if (b) { syncText(tx, b); changed(); }
@@ -897,9 +1154,11 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       setTimeout(() => finishWiki(b.id), 0);
       return true;
     }
-    const mm = /\[\[([^[\]\n]{0,60})$/.exec(before);
+    // «[[название» или «@название» — список страниц для ссылки
+    const br = /\[\[([^[\]\n]{0,60})$/.exec(before);
+    const mm = br || /(?:^|\s)@([^\s@[\]]{0,40})$/.exec(before);
     if (!mm) return closeWiki();
-    Object.assign(wiki, { open: true, blockId: b.id, query: mm[1] });
+    Object.assign(wiki, { open: true, blockId: b.id, query: mm[1], trig: br ? 2 : 1 });
     wikiList.update(mm[1]);
     const r = caretRect() || tx.getBoundingClientRect();
     wikiEl.hidden = false;
@@ -933,7 +1192,64 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     pre();
     const off = caretOffset(tx);
     const id = targetOf(it);
-    insertLink(tx, rangeAt(tx, off - q.length - 2, off), id, it.create || store.titleOf(id));
+    insertLink(tx, rangeAt(tx, off - q.length - (wiki.trig || 2), off), id, it.create || store.titleOf(id));
+  }
+
+  /* ── Markdown прямо при наборе: **жирный**, *курсив*, `код`, ~~зачёркнутый~~ ── */
+
+  const INLINE_MD = [
+    [/(^|[\s(​])\*\*([^*\s](?:[^*]*[^*\s])?)\*\*$/, 'b'],
+    [/(^|[\s(​])__([^_\s](?:[^_]*[^_\s])?)__$/, 'b'],
+    [/(^|[\s(​])\*([^*\s](?:[^*]*[^*\s])?)\*$/, 'i'],
+    [/(^|[\s(​])_([^_\s](?:[^_]*[^_\s])?)_$/, 'i'],
+    [/(^|[\s(​])~~([^~\s](?:[^~]*[^~\s])?)~~$/, 's'],
+    [/(^|[^`\w])`([^`]+)`$/, 'code'],
+  ];
+
+  function inlineMarkdown(b, tx) {
+    const s = getSelection();
+    if (!s.isCollapsed || s.anchorNode?.parentElement?.closest('code, a')) return false;
+    const off = caretOffset(tx);
+    // Смещения считаются вместе с невидимыми символами — так же, как их считает rangeAt
+    const before = tx.textContent.slice(0, off);
+    for (const [re, tag] of INLINE_MD) {
+      const m = re.exec(before);
+      if (!m) continue;
+      const start = off - m[0].length + m[1].length;
+      // Браузер не выполняет команды редактирования внутри события ввода — откладываем на тик
+      const src = m[0].slice(m[1].length);
+      setTimeout(() => {
+        // При быстром наборе следующие символы могут прийти раньше этого тика: они стоят правее и не мешают,
+        // главное — чтобы сам фрагмент с маркерами остался на месте
+        const cur = document.activeElement === tx ? caretOffset(tx) : -1;
+        if (cur < off || tx.textContent.slice(start, off) !== src) return;
+        const extra = cur - off;
+        pre();
+        if (tag === 'code') {
+          insertInline(tx, rangeAt(tx, start, off), `<code>${escapeHtml(m[2].replace(ZW_RE, ''))}</code>`, !extra);
+          if (extra) { const s = getSelection(); const at = caretOffset(tx) + extra; s.removeAllRanges(); s.addRange(rangeAt(tx, at, at)); }
+          return;
+        }
+        // Убираем маркеры (сначала закрывающий — смещения левее не сдвигаются), затем форматируем текст
+        // встроенной командой и выключаем стиль, чтобы дальше печаталось обычным текстом
+        const mark = (m[0].length - m[1].length - m[2].length) / 2;
+        const sel = (r) => { const s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+        sel(rangeAt(tx, off - mark, off));
+        document.execCommand('delete');
+        sel(rangeAt(tx, start, start + mark));
+        document.execCommand('delete');
+        sel(rangeAt(tx, start, start + m[2].length));
+        const cmd = { b: 'bold', i: 'italic', s: 'strikeThrough' }[tag];
+        document.execCommand(cmd);
+        getSelection().collapseToEnd();
+        if (extra) sel(rangeAt(tx, cur - 2 * mark, cur - 2 * mark));
+        else if (document.queryCommandState(cmd)) document.execCommand(cmd);
+        syncText(tx, b);
+        changed();
+      }, 0);
+      return true;
+    }
+    return false;
   }
 
   function wikiKey(e) {
@@ -1013,7 +1329,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     const b = tx && blockOf(tx);
     if (!b) return;
     syncText(tx, b);
-    if (b.type !== 'code') syncDir(tx);
+    if (b.type !== 'code') syncDir(tx); else scheduleHL(b.id);
     if (b.type === 'p' && tx.textContent === '---') {
       pre();
       b.html = '';
@@ -1023,6 +1339,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       return;
     }
     if (e.inputType === 'insertText' && tryMarkdown(b, tx)) return;
+    if (e.inputType === 'insertText' && b.type !== 'code' && /[*_~`]$/.test(e.data || '') && inlineMarkdown(b, tx)) { changed(true); return; }
     if (e.inputType === 'insertText' && b.type === 'p' && tx.textContent === '```') {
       pre(); b.html = ''; setType(b, 'code', false); changed(); focusBlock(b, 0); return;
     }
@@ -1089,6 +1406,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     if (!onEdge) return false;
     const target = neighbor(blocks.indexOf(b), dir);
     if (!target) { if (dir < 0) { titleEl.focus(); return true; } return false; }
+    if (target.type === 'table') { focusBlock(target, dir < 0 ? 'end' : 0); return true; }
     const tt = textOf(target.id);
     if (!tt) { select([target.id]); els.get(target.id).scrollIntoView({ block: 'nearest' }); return true; }
     tt.closest('.block').scrollIntoView({ block: 'nearest' });
@@ -1145,7 +1463,16 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       if (mod && b.type === 'todo') { e.preventDefault(); toggleCheck(b); return; }
       if (mod && b.type === 'toggle') { e.preventDefault(); toggleFold(b); return; }
       if (b.type === 'code') {
-        if (!mod) return;
+        if (!mod) {
+          // Новая строка кода сохраняет отступ текущей, после { [ ( : — на шаг глубже
+          e.preventDefault();
+          const off = caretOffset(tx);
+          const text = tx.textContent;
+          const line = text.slice(text.lastIndexOf('\n', off - 1) + 1, off);
+          const indent = /^[ \t]*/.exec(line)[0] + (/[{[(:]\s*$/.test(line) ? '  ' : '');
+          document.execCommand('insertText', false, '\n' + indent);
+          return;
+        }
         e.preventDefault();
         const nb = newP(b.indent ? { indent: b.indent } : null);
         insertAt(i + 1, [nb]); changed(); focusBlock(nb, 0);
@@ -1180,8 +1507,20 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     }
     if (e.key === 'Tab') {
       e.preventDefault();
-      if (b.type === 'code') document.execCommand('insertText', false, '  ');
-      else setIndent(b, e.shiftKey ? -1 : 1);
+      if (b.type === 'code') {
+        if (!e.shiftKey) { document.execCommand('insertText', false, '  '); return; }
+        // Shift+Tab: убрать до двух пробелов (или табуляцию) в начале текущей строки
+        const off = caretOffset(tx);
+        const text = tx.textContent;
+        const start = text.lastIndexOf('\n', off - 1) + 1;
+        const n = /^(?: {1,2}|\t)/.exec(text.slice(start))?.[0].length || 0;
+        if (n) {
+          const s = getSelection();
+          s.removeAllRanges();
+          s.addRange(rangeAt(tx, start, start + n));
+          document.execCommand('delete');
+        }
+      } else setIndent(b, e.shiftKey ? -1 : 1);
       return;
     }
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.altKey) {
@@ -1203,6 +1542,18 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       return;
     }
     if (e.key === 'Escape') { e.preventDefault(); select([b.id]); return; }
+    // Ctrl+Shift+0…9 — сменить тип блока, Ctrl+/ — меню блока
+    if (mod && e.shiftKey && !e.altKey && TURN_KEYS[e.code]) {
+      e.preventDefault();
+      setType(b, TURN_KEYS[e.code]);
+      changed();
+      return;
+    }
+    if (mod && !e.shiftKey && e.code === 'Slash') {
+      e.preventDefault();
+      openBlockMenu(b.id, els.get(b.id).getBoundingClientRect());
+      return;
+    }
     if (!mod) return;
     if (e.code === 'KeyA') {
       if (!tx.textContent || sel.toString().length >= tx.textContent.length) { e.preventDefault(); select(blocks.filter(visible).map((x) => x.id)); }
@@ -1227,6 +1578,12 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
   blocksEl.addEventListener('click', (e) => {
     const b = blockOf(e.target);
     if (!b) return;
+    if (e.target.closest('.code-lang')) return pickLang(b, e.target.closest('.code-lang'));
+    if (e.target.closest('.code-copy')) {
+      const tx = textOf(b.id);
+      navigator.clipboard.writeText(tx ? codeText(tx) : '').then(() => toast(t('code.copied'), { icon: 'check', ms: 1400 }), () => {});
+      return;
+    }
     if (e.target.closest('.check')) return toggleCheck(b);
     if (e.target.closest('.tg')) return toggleFold(b);
     if (e.target.closest('.toggle-empty')) {
@@ -1261,7 +1618,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     layer.append(box);
   }, { signal });
 
-  blocksEl.addEventListener('focusin', (e) => { if (e.target.closest('.text, .caption')) clearSel(); }, { signal });
+  blocksEl.addEventListener('focusin', (e) => { if (e.target.closest('.text, .caption, .cell')) clearSel(); }, { signal });
   blocksEl.addEventListener('focusout', () => setTimeout(() => { if (!blocksEl.contains(document.activeElement)) { closeSlash(); closeWiki(); } }, 0), { signal });
 
   blocksEl.addEventListener('mouseover', (e) => {
@@ -1361,7 +1718,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     document.execCommand('insertText', false, '/');
   }, { signal });
 
-  function openBlockMenu(id) {
+  function openBlockMenu(id, anchor) {
     const b = byId.get(id);
     if (!b) return;
     if (!selected.has(id)) select([id]);
@@ -1391,7 +1748,8 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     items.push({ icon: 'copy', label: t('ed.duplicate'), hint: 'Ctrl+D', onClick: () => duplicate(ids) });
     items.push({ sep: true });
     items.push({ icon: 'trash', label: t('ed.delete'), hint: 'Del', danger: true, onClick: () => { pre(); removeBlocks(withKids(ids)); changed(); } });
-    menu(gripBtn.getBoundingClientRect(), items);
+    const r = anchor || gripBtn.getBoundingClientRect();
+    menu(anchor ? { left: r.left, right: r.left, top: r.top, bottom: r.top + 28 } : r, items);
   }
 
   gripBtn.addEventListener('pointerdown', (e) => {
@@ -1705,17 +2063,50 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     if (json) {
       e.preventDefault();
       try {
-        const list = JSON.parse(json).map((b) => ({ ...b, id: uid() }));
-        place(list, ref);
-        select(list.map((b) => b.id).filter((id) => visible(byId.get(id))));
+        const list = (JSON.parse(json) || []).map(cleanBlock).filter(Boolean);
+        if (list.length) {
+          place(list, ref);
+          select(list.map((b) => b.id).filter((id) => visible(byId.get(id))));
+        }
       } catch {}
       return;
     }
     if (!text) return;
     e.preventDefault();
     const b = tx && blockOf(tx);
+    // Адрес из буфера: на выделенный текст ставится ссылкой, иначе вставляется готовой ссылкой
+    const url = text.trim();
+    if (b && b.type !== 'code' && /^(?:https?:\/\/|mailto:)[^\s<>"]+$/i.test(url)) {
+      const s = getSelection();
+      pre();
+      if (!s.isCollapsed && tx.contains(s.anchorNode)) {
+        document.execCommand('createLink', false, url);
+        syncText(tx, b);
+        changed();
+      } else if (s.rangeCount) insertInline(tx, s.getRangeAt(0), `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`, true);
+      return;
+    }
     if (b && (b.type === 'code' || !text.trim().includes('\n'))) {
       document.execCommand('insertText', false, b.type === 'code' ? text.replace(/\r/g, '') : text.trim());
+      return;
+    }
+    // Кусок кода (без ``` вокруг) становится одним блоком кода с определённым языком, а не россыпью абзацев
+    const codeLang = !/^\s*```/.test(text) && looksLikeCode(text);
+    if (codeLang) {
+      const body = text.replace(/\r/g, '').replace(/^\n+|\s+$/g, '');
+      const nb = { id: uid(), type: 'code', html: escapeHtml(body), lang: codeLang };
+      place([nb], ref);
+      toast(t('code.pasted', { lang: LANGS[codeLang].name }), { icon: 'code', ms: 2600 });
+      focusBlock(nb, 'end');
+      return;
+    }
+    // Ячейки из Excel или Google Таблиц (столбцы через табуляцию) становятся таблицей
+    const grid = parseGrid(text);
+    if (grid.length >= 2 && grid.every((r) => r.length >= 2)) {
+      // Скопированный список слов обычно без шапки: заголовки можно включить в меню таблицы
+      const nb = { id: uid(), type: 'table', rows: normRows(grid), head: false };
+      place([nb], ref);
+      select([nb.id]);
       return;
     }
     const list = fromText(text);
@@ -1804,7 +2195,9 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     refresh(byId.get(bid));
   });
 
-  renderBacklinks();
+  // Ссылки на страницу требуют прочитать все заметки — делаем это, когда страница уже показана
+  if (window.requestIdleCallback) requestIdleCallback(() => renderBacklinks(), { timeout: 1200 });
+  else setTimeout(renderBacklinks, 200);
   if (ctx.blockId) requestAnimationFrame(() => flash(ctx.blockId));
   else if (!m.title && blocks.length === 1 && isEmpty(blocks[0])) titleEl.focus();
 
@@ -1816,7 +2209,7 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
     redo,
     rename() { setCaret(titleEl, 'end'); getSelection().selectAllChildren(titleEl); },
     stats: () => {
-      const text = blocks.map((b) => plainText(b.html)).join(' ').trim();
+      const text = blocks.map((b) => (b.type === 'table' ? tableText(b) : plainText(b.html))).join(' ').trim();
       return { words: text ? text.split(/\s+/).length : 0, chars: text.length, blocks: blocks.length };
     },
     markdown: () => `# ${m.title || t('untitled')}\n\n` + toMarkdown(blocks),
@@ -1825,6 +2218,9 @@ export function mountEditor(scrollEl, pageId, page, ctx) {
       offBlock();
       hideCard();
       clearTimeout(hist.timer);
+      cancelAnimationFrame(hlFrame);
+      cancelAnimationFrame(tocFrame);
+      clearAllCode();
       band.remove();
       fmtBar.remove();
       slashEl.remove();

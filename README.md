@@ -5,99 +5,109 @@
 <h1 align="center">Liser</h1>
 
 <p align="center">
-  Офлайн-заметки для Windows: блоки, задачи, напоминания и рисование.<br>
-  Всё хранится только на вашем компьютере.
+  Offline notes for Windows: blocks, to-dos, tables, code, reminders and drawing.<br>
+  Everything stays on your computer.
 </p>
 
 <p align="center">
-  <b>Русский</b> · <a href="README.en.md">English</a>
+  <b>English</b> · <a href="README.he.md">עברית</a> · <a href="README.ru.md">Русский</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe"><b>⬇ Скачать Liser для Windows</b></a>
+  <a href="https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe"><b>⬇ Download Liser for Windows</b></a>
 </p>
 
-![Liser](docs/screenshot-ru.png)
+![Liser in dark mode](docs/screenshot-en-dark.png)
 
-## Возможности
+## Features
 
-- **Блочный редактор**: текст, заголовки, списки задач, маркированные и нумерованные списки, раскрывающиеся списки, цитаты, выноски, код, разделители, картинки, рисунки и вложенные страницы.
-- **Меню `/`** и Markdown-сокращения: `#` заголовок, `-` список, `[]` задача, `>` цитата, `>>` раскрывающийся список, ```` ``` ```` код.
-- **Напоминания** с датой и временем, повтором (каждый день / неделю / месяц / год), системными уведомлениями Windows и кнопкой «Отложить». Работают в фоне из трея.
-- **Связи между страницами**: выделите слово и нажмите «Страница» на панели (`Ctrl+Shift+K`) или наберите `[[`. При наведении на ссылку видно превью страницы, а внизу каждой страницы есть список ссылок на неё и упоминаний без ссылки.
-- **Граф** (`Ctrl+G`): карта всех страниц и связей между ними. Можно масштабировать, двигать, искать и открыть граф отдельной страницы.
-- **Задачи** со всех страниц на одном экране, **напоминания** сгруппированы по срокам.
-- **Рисование** пером, маркером и ластиком; можно рисовать поверх картинки. Штрихи хранятся векторно и не теряют чёткости при масштабе.
-- **Картинки**: вставка из буфера `Ctrl+V`, перетаскивание файлов, изменение размера, подписи.
-- **Оформление**: обложки, иконки страниц, цвета текста и фона блоков, три шрифта, режим «во всю ширину».
-- **Поиск** по всем заметкам (`Ctrl+P`) и по странице (`Ctrl+F`).
-- **Темы** светлая, тёмная и системная, 7 акцентных цветов, масштаб интерфейса.
-- **Языки**: русский, английский и иврит с зеркальным интерфейсом справа налево. Направление текста определяется для каждого абзаца, поэтому заметки на разных языках можно смешивать.
-- **Данные**: автосохранение, ежедневные автоматические копии, ручная резервная копия и восстановление, экспорт в Markdown и PDF.
+- **Block editor**: text, headings, to-do lists, bulleted and numbered lists, toggle lists, quotes, callouts, code, tables, dividers, images, drawings, a table of contents and nested pages.
+- **`/` menu** and Markdown shortcuts: `#` heading, `-` list, `[]` to-do, `>` quote, `>>` toggle, ```` ``` ```` code — plus Markdown as you type: `**bold**`, `*italic*`, `` `code` ``, `~~strikethrough~~`.
+- **Code** with syntax highlighting for 22 languages. The language is detected automatically or picked by hand, a pasted piece of code turns into a code block right away, and there's a Copy button.
+- **Tables and vocabulary**: `/table`, or `/vocabulary` for a ready “Word — Translation” table for learning languages. `Tab` moves to the next cell, `Enter` adds a row, columns can be sorted and resized, and every cell picks its own text direction. Lists copied from Excel or Google Sheets paste straight in as a table.
+- **Linked pages**: select a word and press “Page” on the toolbar (`Ctrl+Shift+K`), or type `[[` or `@`. Hovering a link previews the page, and each page lists its backlinks and unlinked mentions at the bottom.
+- **Graph view** (`Ctrl+G`): a map of all pages and the links between them, with zoom, pan, search and a per-page local graph.
+- **Reminders** with date, time and repeat (daily / weekly / monthly / yearly), native Windows notifications and snooze. They keep working from the tray.
+- **Tasks** from every page in one view; **reminders** grouped by due date.
+- **Drawing** with pen, highlighter and eraser, including on top of images. Strokes are vector, so they stay sharp at any zoom.
+- **Images**: paste with `Ctrl+V`, drag & drop, resize, captions.
+- **Styling**: covers, page icons, block text and background colors, three fonts, full-width pages.
+- **Search** across all notes (`Ctrl+P`) and within a page (`Ctrl+F`).
+- **Themes**: light, dark and system, 7 accent colors, interface zoom from 50 % to 200 %.
+- **Languages**: English, Hebrew and Russian with a fully mirrored right-to-left interface. Text direction is detected per paragraph, so notes can mix languages.
+- **Your data**: autosave, daily automatic backups, manual backup and restore, export to Markdown and PDF.
 
-## Установка
+![Hebrew interface](docs/screenshot-he.png)
 
-[Скачайте установщик](https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe) (всегда последняя версия) и запустите. Старые версии лежат в разделе [Releases](../../releases). Установщик спросит папку, создаст ярлыки на рабочем столе и в меню «Пуск». Удаление — через «Параметры → Приложения».
+## Install
 
-**Обновление**: просто запустите установщик новой версии. Он сам найдёт установленный Liser, покажет, какая версия стоит и какая будет, и предложит кнопку «Обновить». Программа обновится в той же папке, заметки и настройки не затрагиваются.
+[Download the installer](https://github.com/polkakoch/liser/releases/latest/download/Liser-Setup.exe) (always the latest version) and run it. Older versions are in [Releases](../../releases). The installer lets you pick a folder and creates desktop and Start menu shortcuts. Uninstall from Settings → Apps.
 
-> Установщик не подписан сертификатом разработчика, поэтому при первом запуске Windows SmartScreen может показать предупреждение: «Подробнее → Выполнить в любом случае».
+**Updating**: just run the newer installer. It detects the installed version, shows old → new, and offers an “Update” button. The app is updated in place; notes and settings are untouched.
 
-Заметки лежат в `%APPDATA%\Liser\data` — каждая страница отдельным JSON-файлом, картинки рядом в папке `assets`.
+> The installer isn't code-signed, so Windows SmartScreen may warn on first run: “More info → Run anyway”.
 
-## Горячие клавиши
+Notes are stored in `%APPDATA%\Liser\data` — one JSON file per page, images in the `assets` folder next to them.
 
-| Клавиши | Действие |
+## Keyboard shortcuts
+
+| Keys | Action |
 | --- | --- |
-| `Ctrl+N` | Новая страница |
-| `Ctrl+P` / `Ctrl+F` | Поиск по заметкам / по странице |
-| `Ctrl+S` | Сохранить сейчас |
-| `Ctrl+Z` / `Ctrl+Y` | Отменить / повторить |
-| `Ctrl+B` / `I` / `U` / `E` / `K` | Жирный / курсив / подчёркнутый / код / ссылка |
-| `Ctrl+Shift+K` / `[[` | Ссылка на страницу |
-| `Ctrl+G` | Граф связей |
-| `Ctrl+D` | Дублировать блок |
-| `Ctrl+Enter` | Отметить задачу или раскрыть список |
-| `Ctrl+Shift+↑/↓` | Переместить блок |
-| `Tab` / `Shift+Tab` | Отступ |
-| `Ctrl+\` | Скрыть боковую панель |
-| `Ctrl+,` | Настройки |
-| `Ctrl` + `+` / `−` / `0` | Масштаб |
+| `Ctrl+N` | New page |
+| `Ctrl+P` / `Ctrl+F` | Search all notes / find in page |
+| `Ctrl+S` | Save now |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+B` / `I` / `U` / `E` / `K` | Bold / italic / underline / code / link |
+| `Ctrl+Shift+K` / `[[` / `@` | Link to a page |
+| `Ctrl+G` | Graph view |
+| `Ctrl+Shift+0…9` | Turn into: text, headings 1–3, to-do, lists, toggle, code, quote |
+| `Ctrl+/` | Block menu |
+| `Tab` / `Enter` / `Ctrl+Enter` | In a table: next cell / new row / leave the table |
+| `Ctrl+D` | Duplicate block |
+| `Ctrl+Enter` | Check a to-do or open a toggle |
+| `Ctrl+Shift+↑/↓` | Move block |
+| `Tab` / `Shift+Tab` | Indent / outdent |
+| `Ctrl+\` | Hide the sidebar |
+| `Ctrl+,` | Settings |
+| `Ctrl` + `+` / `−` / `0` | Zoom in / out / reset |
 
-Клавиши привязаны к физическим кнопкам, поэтому работают в любой раскладке.
+Shortcuts are bound to physical keys, so they work in any keyboard layout.
 
-## Разработка
+## Development
 
-Нужен [Node.js](https://nodejs.org) 20 или новее.
+Requires [Node.js](https://nodejs.org) 20+.
 
 ```bash
 npm install
-npm start            # запустить приложение
-npm run web          # открыть интерфейс в браузере (данные в localStorage)
-npm run check        # проверка синтаксиса и полноты переводов
-npm run dist         # собрать установщик в папку dist
+npm start            # run the app
+npm run web          # open the UI in a browser (data in localStorage)
+npm run check        # syntax and translation completeness check
+npm run dist         # build the installer into dist/
+npm run dist:beta    # build "Liser Beta" into beta/ (installs separately, with its own data)
 ```
 
-Сборка в GitHub Actions запускается на каждый push; при пуше тега `v*` установщик публикуется в Releases.
+GitHub Actions builds on every push; pushing a `v*` tag publishes the installer to Releases.
 
-### Устройство
+### Project layout
 
 ```
 src/
-  main.js            главный процесс: окно, трей, хранилище, напоминания, копии, экспорт
-  preload.js         безопасный мост между окном и главным процессом
+  main.js            main process: window, tray, storage, reminders, backups, export
+  preload.js         safe bridge between the window and the main process
   renderer/
     index.html
-    css/app.css      все стили, светлая и тёмная темы, RTL, печать
-    js/app.js        запуск, навигация, верхняя панель, горячие клавиши
-    js/editor.js     блочный редактор
-    js/store.js      данные, автосохранение, поиск
-    js/i18n.js       переводы ru / en / he
-    js/…             боковая панель, экраны, холст, поиск по странице, интерфейсные элементы
+    css/app.css      all styles: light and dark themes, RTL, print
+    js/app.js        startup, navigation, top bar, shortcuts, zoom
+    js/editor.js     block editor
+    js/table.js      tables
+    js/codehl.js     code highlighting and language detection
+    js/store.js      data, autosave, search, links
+    js/i18n.js       translations en / he / ru
+    js/…             sidebar, views, graph, drawing, find in page, UI widgets
 ```
 
-Интерфейс написан на чистом JavaScript без фреймворков и сборщика: модули загружаются напрямую, поэтому окно открывается быстро, а установщик содержит только сам Electron и исходники.
+The UI is plain JavaScript with no framework or bundler: modules load directly, so the window opens fast and the installer contains only Electron plus the sources.
 
-## Лицензия
+## License
 
 [MIT](LICENSE)

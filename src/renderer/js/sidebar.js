@@ -14,7 +14,8 @@ export function mountSidebar(root, app) {
 
   root.replaceChildren(
     h('div', { class: 'side-top' },
-      h('div', { class: 'ws' }, h('span', { class: 'ws-logo' }, 'L'), h('span', { class: 'ws-name' }, 'Liser')),
+      h('div', { class: 'ws' }, h('span', { class: 'ws-logo' }, 'L'), h('span', { class: 'ws-name' }, 'Liser'),
+        /beta/i.test(store.info.version || '') && h('span', { class: 'ws-beta' }, 'beta')),
       h('button', { class: 'icon-btn', title: t('side.hide') + ' · Ctrl+\\', html: icon('sidebar', 18), onclick: () => app.toggleSidebar() }),
       h('button', { class: 'icon-btn', title: t('side.new') + ' · Ctrl+N', html: icon('plus', 18), onclick: () => app.newPage() })),
     h('nav', { class: 'side-nav' },
@@ -75,6 +76,11 @@ export function mountSidebar(root, app) {
     favBox.replaceChildren(h('div', { class: 'side-head' }, h('span', null, t('side.favorites'))), ...favs.map((m) => row(m, 0, true)));
 
     root.querySelectorAll('[data-nav]').forEach((el) => el.classList.toggle('active', el.dataset.nav === app.route.type));
+    updateBadge();
+  }
+
+  // Счётчик просроченных напоминаний — дёшево обновляется раз в минуту без перестройки дерева
+  function updateBadge() {
     const now = Date.now();
     const due = store.activeReminders().filter((r) => !r.done && r.at <= now).length;
     badge.hidden = !due;
@@ -192,5 +198,5 @@ export function mountSidebar(root, app) {
   });
 
   render();
-  return { render: schedule, destroy: () => offs.forEach((off) => off()) };
+  return { render: schedule, updateBadge, destroy: () => offs.forEach((off) => off()) };
 }

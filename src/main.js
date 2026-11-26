@@ -7,7 +7,9 @@ const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
 
-const APP_ID = 'com.liser.notes';
+// Бета-сборка («Liser Beta») ставится рядом с обычной: своё имя, свой ID и своя папка данных
+const BETA = /beta/i.test(app.getName());
+const APP_ID = BETA ? 'com.liser.beta' : 'com.liser.notes';
 const RENDERER = path.join(__dirname, 'renderer');
 const ICON = path.join(__dirname, '..', 'assets', 'icon.png');
 const TRAY_ICON = path.join(__dirname, '..', 'assets', 'tray.png');
@@ -102,16 +104,26 @@ function writeAtomic(file, text) {
   const prev = chains.get(file)?.promise || Promise.resolve();
   const entry = { queued: true };
   pendingWrites++;
+  let data = null;
   entry.promise = prev.catch(() => {}).then(async () => {
     entry.queued = false;
-    const data = latest.get(file);
+    data = latest.get(file);
     if (data == null) return;
     const tmp = file + '.tmp';
     await fsp.writeFile(tmp, data);
     await renameRetry(tmp, file);
+    // Пока шла запись, при закрытии окна могла пройти синхронная запись более новых данных,
+    // и наше переименование легло поверх неё. Если новую версию не допишет следующая
+    // запись в очереди — дописываем её сразу.
+    const now = latest.get(file);
+    const next = chains.get(file);
+    if (now != null && now !== data && !(next && next !== entry && next.queued)) writeSync(file, now);
   }).catch((err) => console.error('write failed', file, err)).finally(() => {
     pendingWrites--;
-    if (chains.get(file) === entry) chains.delete(file);
+    if (chains.get(file) !== entry) return;
+    chains.delete(file);
+    // Файл на диске совпадает с последней версией — держать её текст в памяти больше не нужно
+    if (latest.get(file) === data) latest.delete(file);
   });
   chains.set(file, entry);
   return entry.promise;
@@ -226,6 +238,8 @@ function createWindow() {
       nodeIntegration: false,
       spellcheck: false,
       v8CacheOptions: 'bypassHeatCheck',
+      // Сохранённый масштаб — сразу, чтобы окно не мигало в 100 % при запуске
+      zoomFactor: Math.min(2, Math.max(0.5, Number(settings.zoom) || 1)),
     },
   });
 
@@ -321,7 +335,7 @@ function buildTrayMenu() {
 
 function createTray() {
   try { tray = new Tray(TRAY_ICON); } catch { tray = null; return; }
-  tray.setToolTip('Liser');
+  tray.setToolTip(BETA ? 'Liser Beta' : 'Liser');
   tray.on('click', showWindow);
   buildTrayMenu();
 }
@@ -432,21 +446,23 @@ function registerIpc() {
 
   // Лёгкая выжимка всех страниц для поиска и списка задач
   ipcMain.handle('pages:all', async () => {
-    const out = [];
-    for (const id of Object.keys(index?.pages || {})) {
-      if (!ID_RE.test(id)) continue;
+    const ids = Object.keys(index?.pages || {}).filter((id) => ID_RE.test(id));
+    const read = async (id) => {
       try {
         const file = pageFile(id);
-        const page = latest.has(file) ? JSON.parse(latest.get(file)) : JSON.parse(await fsp.readFile(file, 'utf8'));
-        out.push({
+        const page = JSON.parse(latest.has(file) ? latest.get(file) : await fsp.readFile(file, 'utf8'));
+        return {
           id,
           blocks: (page.blocks || []).map((b) => ({
-            id: b.id, type: b.type, html: b.html, checked: b.checked, remind: b.remind, caption: b.caption,
+            id: b.id, type: b.type, html: b.html, checked: b.checked, remind: b.remind, caption: b.caption, rows: b.rows,
           })),
-        });
-      } catch {}
-    }
-    return out;
+        };
+      } catch { return null; }
+    };
+    // Файлы читаются пачками параллельно — на сотнях заметок это в разы быстрее, чем по одному
+    const out = [];
+    for (let i = 0; i < ids.length; i += 24) out.push(...(await Promise.all(ids.slice(i, i + 24).map(read))));
+    return out.filter(Boolean);
   });
 
   ipcMain.on('sync:save', (e, data) => {
@@ -565,9 +581,14 @@ function registerIpc() {
     // Копия может лежать внутри папки данных — сначала забираем её во временную папку
     const tmp = path.join(app.getPath('temp'), 'liser-restore-' + Date.now());
     await fsp.cp(dir, tmp, { recursive: true });
+    // Новые страницы сначала целиком копируются рядом, и только потом подменяют старые:
+    // если копирование сорвётся, текущие заметки останутся на месте
+    const fresh = PAGES + '.restore';
+    await fsp.rm(fresh, { recursive: true, force: true });
+    await fsp.cp(path.join(tmp, 'pages'), fresh, { recursive: true });
     latest.clear();
     await fsp.rm(PAGES, { recursive: true, force: true });
-    await fsp.cp(path.join(tmp, 'pages'), PAGES, { recursive: true });
+    await renameRetry(fresh, PAGES);
     await fsp.copyFile(path.join(tmp, 'index.json'), INDEX_FILE);
     if (fs.existsSync(path.join(tmp, 'assets'))) await fsp.cp(path.join(tmp, 'assets'), ASSETS, { recursive: true, force: false });
     await fsp.rm(tmp, { recursive: true, force: true });

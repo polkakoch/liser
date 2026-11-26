@@ -2,6 +2,7 @@ import { uid, debounce, plainText } from './util.js';
 import { t, getLang } from './i18n.js';
 import { webApi } from './webapi.js';
 import { seedPage } from './seed.js';
+import { tableText } from './table.js';
 
 export const api = window.api || webApi;
 
@@ -86,6 +87,7 @@ export function flushSync() {
 
 // Перед восстановлением из копии: больше ничего не записываем
 export function freeze() { saveSoon.cancel(); frozen = true; }
+export function unfreeze() { frozen = false; if (dirty.size || indexDirty) saveSoon(); }
 
 export function touch(id, page) {
   if (page) pages.set(id, page);
@@ -144,7 +146,7 @@ const toLight = (blocks) => (blocks || []).map((b) => {
   const links = linksIn(b);
   return {
     id: b.id, type: b.type, checked: !!b.checked, remind: b.remind,
-    text: plainText(b.html) || b.caption || '',
+    text: b.type === 'table' ? tableText(b) : plainText(b.html) || b.caption || '',
     ...(links.length && { links }),
   };
 });
@@ -458,7 +460,8 @@ export async function backlinks(id) {
     const mentions = [];
     for (const b of light.get(m.id) || []) {
       if (b.links?.includes(id)) hits.push({ blockId: b.id, text: b.text, type: b.type });
-      else if (title.length >= 3 && b.type !== 'code') {
+      // В коде и таблицах ссылку одним кликом не поставить — их не предлагаем
+      else if (title.length >= 3 && b.type !== 'code' && b.type !== 'table') {
         const i = b.text.toLowerCase().indexOf(title);
         if (i >= 0) mentions.push({ blockId: b.id, text: snippet(b.text, i, title.length) });
       }

@@ -255,6 +255,8 @@ const KEYS = [
   ['Ctrl+Enter', 'keys.check'], ['Ctrl+Shift+↑ / ↓', 'keys.move'], ['Tab / Shift+Tab', 'keys.indent'], ['Ctrl + / − / 0', 'keys.zoom'],
   ['Ctrl+Shift+L', 'keys.theme'], ['Ctrl+,', 'keys.settings'], ['/', 'keys.slash'],
   ['Ctrl+Shift+K', 'keys.pageLink'], ['[[', 'keys.wiki'], ['Ctrl+G', 'keys.graph'],
+  ['Tab / Enter / Ctrl+Enter', 'keys.table'],
+  ['Ctrl+Shift+0…9', 'keys.turnInto'], ['Ctrl+/', 'keys.blockMenu'], ['@', 'keys.mention'], ['**…**  *…*  ~~…~~  `…`', 'keys.inlineMd'],
 ];
 
 export function openSettings(app, section = 'appearance') {
@@ -290,7 +292,7 @@ export function openSettings(app, section = 'appearance') {
   const render = {
     appearance() {
       const zoomLabel = h('span', { class: 'zoom-value' }, Math.round(s.zoom * 100) + '%');
-      const zoomBy = (d) => { app.setZoom(d === 0 ? 1 : s.zoom + d); zoomLabel.textContent = Math.round(s.zoom * 100) + '%'; };
+      const zoomBy = (d) => { if (d === 0) app.setZoom(1); else app.zoomStep(d); zoomLabel.textContent = Math.round(s.zoom * 100) + '%'; };
       const accents = h('div', { class: 'accents' }, ACCENTS.map((a) => h('button', {
         class: 'accent-dot' + (s.accent === a ? ' on' : ''), 'data-accent': a, title: t('color.' + a),
         onclick: (e) => { accents.querySelector('.on')?.classList.remove('on'); e.currentTarget.classList.add('on'); app.setAccent(a); },

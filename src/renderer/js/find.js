@@ -42,8 +42,11 @@ export function openFind(scrollEl, initial = '') {
 
   function paint() {
     if (supported) {
-      CSS.highlights.set('find', new Highlight(...ranges));
-      if (ranges[cur]) CSS.highlights.set('find-cur', new Highlight(ranges[cur])); else CSS.highlights.delete('find-cur');
+      // Приоритет выше, чем у подсветки синтаксиса в блоках кода
+      const all = new Highlight(...ranges);
+      all.priority = 5;
+      CSS.highlights.set('find', all);
+      if (ranges[cur]) { const one = new Highlight(ranges[cur]); one.priority = 6; CSS.highlights.set('find-cur', one); } else CSS.highlights.delete('find-cur');
     }
     count.textContent = !input.value.trim() ? '' : ranges.length ? t('find.count', { i: cur + 1, n: ranges.length }) : t('find.none');
     count.classList.toggle('none', !!input.value.trim() && !ranges.length);

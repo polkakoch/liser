@@ -31,6 +31,7 @@ const app = {
   setTheme,
   setAccent,
   setZoom,
+  zoomStep,
   setLang: changeLang,
   restoreBackup,
   openSearch: () => openSearch(app),
@@ -84,12 +85,41 @@ function applyZoom() {
   requestAnimationFrame(applyWindowControls);
 }
 
+// Шаги масштаба как в браузере: мелкие около 100 %, крупнее по краям
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
 function setZoom(z) {
-  z = clamp(Math.round(z * 10) / 10, 0.5, 2);
-  if (z === store.settings.zoom) return;
+  z = clamp(Math.round(z * 100) / 100, 0.5, 2);
+  if (z === store.settings.zoom) { showZoom(); return; }
   store.setSettings({ zoom: z });
   applyZoom();
   api.setTheme({ dark: isDark(), zoom: z });
+  showZoom();
+  dispatchEvent(new Event('zoomchange'));
+}
+
+function zoomStep(dir) {
+  const cur = store.settings.zoom || 1;
+  const next = dir > 0 ? ZOOM_STEPS.find((s) => s > cur + 0.001) : [...ZOOM_STEPS].reverse().find((s) => s < cur - 0.001);
+  setZoom(next ?? cur);
+}
+
+// Плашка с текущим масштабом и кнопкой сброса — видна пару секунд после изменения
+let zoomPill = null, zoomTimer = 0;
+function showZoom() {
+  const z = store.settings.zoom || 1;
+  if (!zoomPill) {
+    zoomPill = h('div', { class: 'zoom-pill', role: 'status' }, h('span', { class: 'zoom-val' }),
+      h('button', { class: 'zoom-reset', onclick: () => setZoom(1) }, t('zoom.reset')));
+    zoomPill.addEventListener('mouseenter', () => clearTimeout(zoomTimer));
+    zoomPill.addEventListener('mouseleave', () => { zoomTimer = setTimeout(() => zoomPill.classList.remove('show'), 900); });
+    $('#layer').append(zoomPill);
+  }
+  zoomPill.querySelector('.zoom-val').textContent = Math.round(z * 100) + '%';
+  zoomPill.querySelector('.zoom-reset').hidden = z === 1;
+  zoomPill.classList.add('show');
+  clearTimeout(zoomTimer);
+  zoomTimer = setTimeout(() => zoomPill.classList.remove('show'), 1600);
 }
 
 function applyLang() {
@@ -214,7 +244,10 @@ async function restoreBackup() {
   if (!(await confirmBox(t('set.restoreConfirm'), t('set.restoreBtnOk'), false))) return;
   await store.flush();
   store.freeze();
-  await api.restore(dir.path);
+  let ok = false;
+  try { ok = await api.restore(dir.path); } catch (err) { console.error(err); }
+  // При успехе окно перезагрузится само; при ошибке снова разрешаем сохранение, иначе правки будут теряться
+  if (!ok) { store.unfreeze(); toast(t('set.restoreFailed'), { icon: 'info' }); }
 }
 
 /* ───────────── Верхняя панель ───────────── */
@@ -375,18 +408,28 @@ async function boot() {
       case 'KeyG': if (e.shiftKey) return; navigate({ type: 'graph' }); break;
       case 'Backslash': toggleSidebar(); break;
       case 'KeyL': if (!e.shiftKey) return; setTheme(isDark() ? 'light' : 'dark'); break;
-      case 'Equal': case 'NumpadAdd': setZoom(store.settings.zoom + 0.1); break;
-      case 'Minus': case 'NumpadSubtract': setZoom(store.settings.zoom - 0.1); break;
-      case 'Digit0': case 'Numpad0': setZoom(1); break;
+      // Ctrl+Shift+цифры заняты сменой типа блока, поэтому масштаб — только без Shift (кроме «+», который на Shift+=)
+      case 'Equal': case 'NumpadAdd': zoomStep(1); break;
+      case 'Minus': case 'NumpadSubtract': if (e.shiftKey) return; zoomStep(-1); break;
+      case 'Digit0': case 'Numpad0': if (e.shiftKey) return; setZoom(1); break;
       default: return;
     }
     e.preventDefault();
   });
 
+  // Ctrl+колесо и жест тачпада: мелкие сдвиги копятся, один щелчок колеса — один шаг масштаба
+  let wheelAcc = 0, wheelAt = 0;
   addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
     e.preventDefault();
-    setZoom(store.settings.zoom + (e.deltaY < 0 ? 0.1 : -0.1));
+    const now = performance.now();
+    if (now - wheelAt > 250) wheelAcc = 0;
+    wheelAt = now;
+    wheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+    if (Math.abs(wheelAcc) >= 60) {
+      zoomStep(wheelAcc < 0 ? 1 : -1);
+      wheelAcc = 0;
+    }
   }, { passive: false });
 
   addEventListener('beforeunload', () => store.flushSync());
@@ -398,7 +441,7 @@ async function boot() {
   api.on('navigate', ({ pageId, blockId }) => navigate({ type: 'page', id: pageId }, { blockId }));
   api.on('reminder', onReminders);
 
-  setInterval(() => sidebar.render(), 60000);
+  setInterval(() => sidebar.updateBadge(), 60000);
 }
 
 boot().catch((err) => {

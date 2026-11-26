@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 import { t } from './i18n.js';
 import * as store from './store.js';
 import { popover } from './ui.js';
+import { tableText } from './table.js';
 
 export const linkHtml = (id, text) => `<a data-page="${escapeHtml(id)}">${escapeHtml(text)}</a>`;
 
@@ -107,7 +108,7 @@ export function hoverCard(a) {
     if (cardFor !== a) return;
     const lines = [];
     for (const b of page.blocks) {
-      const text = plainText(b.html).trim();
+      const text = (b.type === 'table' ? tableText(b) : plainText(b.html)).trim();
       if (text) lines.push(h('div', { class: 'pc-line', 'data-type': b.type }, text.length > 140 ? text.slice(0, 140) + '…' : text));
       if (lines.length >= 4) break;
     }

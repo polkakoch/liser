@@ -19,6 +19,9 @@ const TEXT = {
     callout: 'Изменения сохраняются автоматически. <code>Ctrl+S</code> — сохранить сразу, <code>Ctrl+P</code> — поиск по всем заметкам, <code>Ctrl+F</code> — поиск по странице.',
     draw: 'Рисование',
     drawText: 'Ниже — холст. Рисуйте мышью, пером или пальцем. Картинку тоже можно превратить в холст и рисовать поверх.',
+    table: 'Таблицы и словарь',
+    tableText: 'Наберите <code>/словарь</code> или <code>/таблица</code>. <code>Tab</code> — следующая ячейка, <code>Enter</code> — новая строка, <code>Ctrl+Enter</code> — выйти из таблицы. Списки из Excel вставляются сразу таблицей.',
+    rows: [['Слово', 'Перевод'], ['hello', 'привет'], ['שלום', 'мир'], ['gracias', 'спасибо']],
   },
   en: {
     title: 'Welcome to Liser',
@@ -37,6 +40,9 @@ const TEXT = {
     callout: 'Changes are saved automatically. <code>Ctrl+S</code> saves right away, <code>Ctrl+P</code> searches all notes, <code>Ctrl+F</code> searches this page.',
     draw: 'Drawing',
     drawText: 'Below is a canvas. Draw with a mouse, pen or finger. You can also turn an image into a canvas and draw on top of it.',
+    table: 'Tables and vocabulary',
+    tableText: 'Type <code>/vocabulary</code> or <code>/table</code>. <code>Tab</code> moves to the next cell, <code>Enter</code> starts a new row, <code>Ctrl+Enter</code> leaves the table. Lists copied from Excel paste straight in as a table.',
+    rows: [['Word', 'Translation'], ['hola', 'hello'], ['שלום', 'peace'], ['merci', 'thank you']],
   },
   he: {
     title: 'ברוכים הבאים ל-Liser',
@@ -55,6 +61,9 @@ const TEXT = {
     callout: 'השינויים נשמרים אוטומטית. <code>Ctrl+S</code> — שמירה מיידית, <code>Ctrl+P</code> — חיפוש בכל הפתקים, <code>Ctrl+F</code> — חיפוש בדף.',
     draw: 'ציור',
     drawText: 'למטה יש קנבס. ציירו בעכבר, בעט או באצבע. אפשר גם להפוך תמונה לקנבס ולצייר מעליה.',
+    table: 'טבלאות ומילון',
+    tableText: 'הקלידו <code>/מילון</code> או <code>/טבלה</code>. <code>Tab</code> — התא הבא, <code>Enter</code> — שורה חדשה, <code>Ctrl+Enter</code> — יציאה מהטבלה. רשימות שהועתקו מ-Excel מודבקות ישר כטבלה.',
+    rows: [['מילה', 'תרגום'], ['hello', 'שלום'], ['привет', 'היי'], ['gracias', 'תודה']],
   },
 };
 
@@ -82,6 +91,9 @@ export function seedPage(lang) {
         b('toggle', s.toggle, { open: false }),
         b('p', s.inner, { indent: 1 }),
         b('callout', s.callout, { color: 'bg-blue' }),
+        b('h2', s.table),
+        b('p', s.tableText),
+        { id: uid(), type: 'table', rows: s.rows },
         b('h2', s.draw),
         b('p', s.drawText),
         { id: uid(), type: 'draw', h: 240, strokes: [] },
